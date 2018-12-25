@@ -46,3 +46,5 @@ spec:
       - name: rules-volume
         configMap:
           name: prometheus-rules
+      nodeSelector:
+        prometheus: deploy

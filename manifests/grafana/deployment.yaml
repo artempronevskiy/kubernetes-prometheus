@@ -57,6 +57,9 @@ spec:
         volumeMounts:
         - name: grafana-persistent-storage
           mountPath: /var/lib/grafana
+      nodeSelector:
+        api: deploy
       volumes:
       - name: grafana-persistent-storage
         emptyDir: {}
+
