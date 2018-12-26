@@ -411,19 +411,19 @@ spec:
         app: grafana
         component: core
     spec:
+      securityContext:
+        fsGroup: 999
       containers:
       - image: grafana/grafana:4.2.0
         name: grafana-core
         imagePullPolicy: IfNotPresent
-        # env:
         resources:
-          # keep request = limit to keep this container in guaranteed class
           limits:
             cpu: 100m
             memory: 100Mi
           requests:
-            cpu: 100m
-            memory: 100Mi
+            cpu: 200m
+            memory: 200Mi
         env:
           # The following env variables set up basic auth twith the default admin user and admin password.
           - name: GF_AUTH_BASIC_ENABLED
@@ -440,23 +440,20 @@ spec:
                 key: admin-password
           - name: GF_AUTH_ANONYMOUS_ENABLED
             value: "false"
-          # - name: GF_AUTH_ANONYMOUS_ORG_ROLE
-          #   value: Admin
-          # does not really work, because of template variables in exported dashboards:
-          # - name: GF_DASHBOARDS_JSON_ENABLED
-          #   value: "true"
         readinessProbe:
           httpGet:
             path: /login
             port: 3000
-          # initialDelaySeconds: 30
-          # timeoutSeconds: 1
         volumeMounts:
         - name: grafana-persistent-storage
           mountPath: /var/lib/grafana
+      nodeSelector:
+        api: deploy
       volumes:
       - name: grafana-persistent-storage
-        emptyDir: {}
+        awsElasticBlockStore:
+          volumeID: xxxxxxxxxxxxxxxxxxx
+          fsType: ext4
 ---
 apiVersion: v1
 data:
@@ -2569,6 +2566,8 @@ spec:
         app: prometheus
         component: core
     spec:
+      securityContext:
+        fsGroup: 999
       serviceAccountName: prometheus-k8s
       containers:
       - name: prometheus
@@ -2578,6 +2577,7 @@ spec:
           - '-storage.local.memory-chunks=500000'
           - '-config.file=/etc/prometheus/prometheus.yaml'
           - '-alertmanager.url=http://alertmanager:9093/'
+          - '-storage.tsdb.path=/prometheus'
         ports:
         - name: webui
           containerPort: 9090
@@ -2586,13 +2586,15 @@ spec:
             cpu: 500m
             memory: 500M
           limits:
-            cpu: 500m
-            memory: 500M
+            cpu: 600m
+            memory: 700M
         volumeMounts:
         - name: config-volume
           mountPath: /etc/prometheus
         - name: rules-volume
           mountPath: /etc/prometheus-rules
+        - name: storage-volume
+          mountPath: /prometheus
       volumes:
       - name: config-volume
         configMap:
@@ -2600,6 +2602,13 @@ spec:
       - name: rules-volume
         configMap:
           name: prometheus-rules
+      - name: storage-volume
+        awsElasticBlockStore:
+          volumeID: xxxxxxxxxxxxxxxxx
+          fsType: ext4
+      nodeSelector:
+        prometheus: deploy
+
 ---
 apiVersion: extensions/v1beta1
 kind: Deployment
@@ -2619,47 +2628,48 @@ spec:
         image: gcr.io/google_containers/kube-state-metrics:v0.5.0
         ports:
         - containerPort: 8080
+
 ---
-# ---
-# apiVersion: rbac.authorization.k8s.io/v1beta1
-# kind: ClusterRoleBinding
-# metadata:
-#   name: kube-state-metrics
-# roleRef:
-#   apiGroup: rbac.authorization.k8s.io
-#   kind: ClusterRole
-#   name: kube-state-metrics
-# subjects:
-# - kind: ServiceAccount
-#   name: kube-state-metrics
-#   namespace: monitoring
-# ---
-# apiVersion: rbac.authorization.k8s.io/v1beta1
-# kind: ClusterRole
-# metadata:
-#   name: kube-state-metrics
-# rules:
-# - apiGroups: [""]
-#   resources:
-#   - nodes
-#   - pods
-#   - services
-#   - resourcequotas
-#   - replicationcontrollers
-#   - limitranges
-#   verbs: ["list", "watch"]
-# - apiGroups: ["extensions"]
-#   resources:
-#   - daemonsets
-#   - deployments
-#   - replicasets
-#   verbs: ["list", "watch"]
-# ---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+ name: kube-state-metrics
+roleRef:
+ apiGroup: rbac.authorization.k8s.io
+ kind: ClusterRole
+ name: kube-state-metrics
+subjects:
+- kind: ServiceAccount
+ name: kube-state-metrics
+ namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+ name: kube-state-metrics
+rules:
+- apiGroups: [""]
+ resources:
+ - nodes
+ - pods
+ - services
+ - resourcequotas
+ - replicationcontrollers
+ - limitranges
+ verbs: ["list", "watch"]
+- apiGroups: ["extensions"]
+ resources:
+ - daemonsets
+ - deployments
+ - replicasets
+ verbs: ["list", "watch"]
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: kube-state-metrics
   namespace: monitoring
+
 ---
 apiVersion: v1
 kind: Service
